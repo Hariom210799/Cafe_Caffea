@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .inputField {
+    @apply w-full p-2 mb-3 border border-gray-300 rounded-lg 
+           focus:outline-none focus:ring-2 focus:ring-blue-400;
+  }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+body {
+  @apply bg-gray-50 text-gray-800;
+}
+/* sharpen images a bit on desktop */
+img, video {
+  image-rendering: -webkit-optimize-contrast;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  scroll-behavior: smooth;
+}
