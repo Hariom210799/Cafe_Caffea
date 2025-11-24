@@ -205,7 +205,7 @@ const AdminHistory = () => {
             Billing History & Analytics
           </Typography>
           <Typography variant="body2" color="#d0e5de">
-            Track Café Caffea&apos;s revenue, orders and top selling items over
+            Track Cafe Caffea&apos;s revenue, orders and top selling items over
             time.
           </Typography>
         </Box>

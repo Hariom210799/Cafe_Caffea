@@ -29,7 +29,8 @@ import {
   fetchCategories,
 } from "../api";
 
-const API_URL = process.env.REACT_APP_API_URL;
+// ✅ Use env for backend, fallback to localhost for your PC
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 
 const Admin = () => {
   // Orders
@@ -50,23 +51,20 @@ const Admin = () => {
   const [confirmServeMap, setConfirmServeMap] = useState({});
 
   // ===========================
-  // LOAD ORDERS
+  // LOAD ORDERS (from /orders)
   // ===========================
   const loadOrders = async () => {
-  try {
-    setLoading(true);
-    const res = await axios.get(`${API_URL}/tables`);
-    // extract only tables that have active orders
-    const activeTables = res.data.filter(t => t.activeOrders.length > 0);
-    setOrders(activeTables);
-  } catch (err) {
-    console.error("Error loading tables:", err);
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_URL}/orders`);
+      // Make sure it's always an array
+      setOrders(Array.isArray(res.data) ? res.data : []);
+    } catch (err) {
+      console.error("Error loading orders:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // ===========================
   // LOAD MENU + CATEGORIES
@@ -98,9 +96,14 @@ const Admin = () => {
   // HELPERS
   // ===========================
   const calcTotal = (order) => {
-    return order.batches.reduce(
+    const batches = order?.batches || [];
+    return batches.reduce(
       (sum, batch) =>
-        sum + batch.items.reduce((s, i) => s + i.price * i.quantity, 0),
+        sum +
+        (batch.items || []).reduce(
+          (s, i) => s + (Number(i.price) || 0) * (Number(i.quantity) || 0),
+          0
+        ),
       0
     );
   };
@@ -134,7 +137,8 @@ const Admin = () => {
       await markOrderServed(orderId);
 
       // 2) flatten batches -> items
-      const rawItems = order.batches.flatMap((b) => b.items || []);
+      const batches = order?.batches || [];
+      const rawItems = batches.flatMap((b) => b.items || []);
 
       const billItems = rawItems.map((it) => ({
         name: it.name,
@@ -156,7 +160,7 @@ const Admin = () => {
         status: "PENDING",
       });
 
-      // 4) remove table from active order list
+      // 4) remove table/order from active list
       setOrders((prev) => prev.filter((o) => o._id !== orderId));
     } catch (err) {
       console.error("Billing error:", err.response?.data || err);
@@ -226,7 +230,8 @@ const Admin = () => {
       {orders.map((order) => {
         const total = calcTotal(order);
         const served = order.served;
-        const hasPending = order.batches.some((b) => !b.confirmed);
+        const batches = order?.batches || [];
+        const hasPending = batches.some((b) => !b.confirmed);
         const isConfirmed = confirmServeMap[order._id] || false;
 
         return (
@@ -271,8 +276,8 @@ const Admin = () => {
             <Divider sx={{ my: 2, borderColor: "#d6ad60" }} />
 
             {/* Batches */}
-            {order.batches.map((batch, idx) => (
-              <Box key={batch._id} sx={{ mb: 2 }}>
+            {batches.map((batch, idx) => (
+              <Box key={batch._id || idx} sx={{ mb: 2 }}>
                 <Typography
                   sx={{
                     fontWeight: "bold",
@@ -284,7 +289,7 @@ const Admin = () => {
 
                 <Divider sx={{ my: 1, borderColor: "#d6ad60" }} />
 
-                {batch.items.map((it) => (
+                {(batch.items || []).map((it) => (
                   <Box
                     key={it._id}
                     sx={{
@@ -300,7 +305,7 @@ const Admin = () => {
 
                     <Box sx={{ display: "flex", alignItems: "center" }}>
                       <Typography sx={{ color: "#d6ad60", mr: 2 }}>
-                        ₹{(it.price * it.quantity).toFixed(2)}
+                        ₹{(Number(it.price || 0) * Number(it.quantity || 0)).toFixed(2)}
                       </Typography>
 
                       {!served && (
@@ -408,184 +413,182 @@ const Admin = () => {
       })}
 
       {/* ===========================
-          ADD DISH DIALOG (REAL MENU)
-          =========================== */}
-    {/* ===========================
-    ADD DISH DIALOG (THEMED UI)
-   =========================== */}
-<Dialog
-  open={openDialog}
-  onClose={() => setOpenDialog(false)}
-  fullWidth
-  maxWidth="md"
-  PaperProps={{
-    sx: {
-      background: "linear-gradient(180deg,#0d1f1b,#14312c)",
-      borderRadius: "22px",
-      overflow: "hidden",
-      border: "1px solid #2b4a44",
-    },
-  }}
->
-  <DialogTitle
-    sx={{
-      color: "#d6ad60",
-      textAlign: "center",
-      fontWeight: "bold",
-      fontSize: "1.6rem",
-      pt: 3,
-      pb: 1,
-    }}
-  >
-    Select Dish to Add
-  </DialogTitle>
-
-  <DialogContent
-    dividers
-    sx={{
-      background: "transparent",
-      p: 3,
-      maxHeight: "75vh",
-    }}
-  >
-    {/* CATEGORY TABS */}
-    <Box
-      sx={{
-        display: "flex",
-        flexWrap: "wrap",
-        justifyContent: "center",
-        mb: 2,
-        gap: 1,
-      }}
-    >
-      {categories.map((cat) => (
-        <Chip
-          key={cat}
-          label={cat}
-          onClick={() => setSelectedCategory(cat)}
-          sx={{
-            px: 2,
-            py: 0.5,
-            borderRadius: "12px",
-            fontSize: "14px",
-            border: "1px solid #d6ad60",
-            backgroundColor: selectedCategory === cat ? "#d6ad60" : "transparent",
-            color: selectedCategory === cat ? "#1b1b1b" : "#d6ad60",
-            fontWeight: selectedCategory === cat ? 600 : 400,
-            "&:hover": {
-              backgroundColor: "#d6ad60",
-              color: "#1b1b1b",
-            },
-          }}
-        />
-      ))}
-    </Box>
-
-    {/* SEARCH BAR */}
-    <Box sx={{ maxWidth: 350, mx: "auto", mb: 3 }}>
-      <TextField
+          ADD DISH DIALOG (THEMED UI)
+         =========================== */}
+      <Dialog
+        open={openDialog}
+        onClose={() => setOpenDialog(false)}
         fullWidth
-        size="small"
-        placeholder="Search dishes..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        InputProps={{
-          startAdornment: (
-            <InputAdornment position="start">
-              <SearchIcon sx={{ color: "#d6ad60" }} />
-            </InputAdornment>
-          ),
+        maxWidth="md"
+        PaperProps={{
           sx: {
-            background: "#102b27",
-            color: "white",
-            borderRadius: "12px",
-            "& fieldset": { borderColor: "#32554f" },
+            background: "linear-gradient(180deg,#0d1f1b,#14312c)",
+            borderRadius: "22px",
+            overflow: "hidden",
+            border: "1px solid #2b4a44",
           },
         }}
-      />
-    </Box>
-
-    {/* MENU GRID */}
-    <Grid container spacing={2}>
-      {filteredMenu.length === 0 ? (
-        <Typography
+      >
+        <DialogTitle
           sx={{
+            color: "#d6ad60",
             textAlign: "center",
-            width: "100%",
-            my: 3,
-            color: "#c7d5cf",
+            fontWeight: "bold",
+            fontSize: "1.6rem",
+            pt: 3,
+            pb: 1,
           }}
         >
-          No dishes found.
-        </Typography>
-      ) : (
-        filteredMenu.map((item) => (
-          <Grid item xs={12} sm={6} md={4} key={item._id}>
-            <Card
-              sx={{
-                background: "#14312c",
-                borderRadius: "18px",
-                overflow: "hidden",
-                color: "white",
-                boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
-                border: "1px solid #244842",
-                transition: "0.2s",
-                "&:hover": {
-                  transform: "scale(1.03)",
-                  boxShadow: "0 6px 20px rgba(0,0,0,0.55)",
-                },
-              }}
-            >
-              <CardMedia
-                component="img"
-                image={item.image}
-                alt={item.name}
-                sx={{ height: 150, objectFit: "cover" }}
-              />
+          Select Dish to Add
+        </DialogTitle>
 
-              <CardContent sx={{ textAlign: "center", pb: "20px" }}>
-                <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
-                  {item.name}
-                  {item.subCategory && ` (${item.subCategory})`}
-                </Typography>
-
-                <Typography
-                  sx={{
-                    color: "#d6ad60",
-                    fontWeight: 600,
-                    mt: 0.5,
-                    mb: 1.5,
-                  }}
-                >
-                  ${Number(item.price).toFixed(2)}
-                </Typography>
-
-                <Button
-                  variant="contained"
-                  sx={{
+        <DialogContent
+          dividers
+          sx={{
+            background: "transparent",
+            p: 3,
+            maxHeight: "75vh",
+          }}
+        >
+          {/* CATEGORY TABS */}
+          <Box
+            sx={{
+              display: "flex",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              mb: 2,
+              gap: 1,
+            }}
+          >
+            {categories.map((cat) => (
+              <Chip
+                key={cat}
+                label={cat}
+                onClick={() => setSelectedCategory(cat)}
+                sx={{
+                  px: 2,
+                  py: 0.5,
+                  borderRadius: "12px",
+                  fontSize: "14px",
+                  border: "1px solid #d6ad60",
+                  backgroundColor:
+                    selectedCategory === cat ? "#d6ad60" : "transparent",
+                  color:
+                    selectedCategory === cat ? "#1b1b1b" : "#d6ad60",
+                  fontWeight: selectedCategory === cat ? 600 : 400,
+                  "&:hover": {
                     backgroundColor: "#d6ad60",
                     color: "#1b1b1b",
-                    fontWeight: "bold",
-                    borderRadius: "10px",
-                    px: 4,
-                    py: 0.7,
-                    "&:hover": {
-                      backgroundColor: "#e8d5b7",
-                    },
-                  }}
-                  onClick={() => handleAddDish(activeOrderId, item)}
-                >
-                  Add
-                </Button>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))
-      )}
-    </Grid>
-  </DialogContent>
-</Dialog>
+                  },
+                }}
+              />
+            ))}
+          </Box>
 
+          {/* SEARCH BAR */}
+          <Box sx={{ maxWidth: 350, mx: "auto", mb: 3 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search dishes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon sx={{ color: "#d6ad60" }} />
+                  </InputAdornment>
+                ),
+                sx: {
+                  background: "#102b27",
+                  color: "white",
+                  borderRadius: "12px",
+                  "& fieldset": { borderColor: "#32554f" },
+                },
+              }}
+            />
+          </Box>
+
+          {/* MENU GRID */}
+          <Grid container spacing={2}>
+            {filteredMenu.length === 0 ? (
+              <Typography
+                sx={{
+                  textAlign: "center",
+                  width: "100%",
+                  my: 3,
+                  color: "#c7d5cf",
+                }}
+              >
+                No dishes found.
+              </Typography>
+            ) : (
+              filteredMenu.map((item) => (
+                <Grid item xs={12} sm={6} md={4} key={item._id}>
+                  <Card
+                    sx={{
+                      background: "#14312c",
+                      borderRadius: "18px",
+                      overflow: "hidden",
+                      color: "white",
+                      boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                      border: "1px solid #244842",
+                      transition: "0.2s",
+                      "&:hover": {
+                        transform: "scale(1.03)",
+                        boxShadow: "0 6px 20px rgba(0,0,0,0.55)",
+                      },
+                    }}
+                  >
+                    <CardMedia
+                      component="img"
+                      image={item.image}
+                      alt={item.name}
+                      sx={{ height: 150, objectFit: "cover" }}
+                    />
+
+                    <CardContent sx={{ textAlign: "center", pb: "20px" }}>
+                      <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+                        {item.name}
+                        {item.subCategory && ` (${item.subCategory})`}
+                      </Typography>
+
+                      <Typography
+                        sx={{
+                          color: "#d6ad60",
+                          fontWeight: 600,
+                          mt: 0.5,
+                          mb: 1.5,
+                        }}
+                      >
+                        ₹{Number(item.price).toFixed(2)}
+                      </Typography>
+
+                      <Button
+                        variant="contained"
+                        sx={{
+                          backgroundColor: "#d6ad60",
+                          color: "#1b1b1b",
+                          fontWeight: "bold",
+                          borderRadius: "10px",
+                          px: 4,
+                          py: 0.7,
+                          "&:hover": {
+                            backgroundColor: "#e8d5b7",
+                          },
+                        }}
+                        onClick={() => handleAddDish(activeOrderId, item)}
+                      >
+                        Add
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))
+            )}
+          </Grid>
+        </DialogContent>
+      </Dialog>
     </Box>
   );
 };
