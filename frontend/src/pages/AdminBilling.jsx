@@ -5,7 +5,7 @@ import axios from "axios";
 import { fetchAllBills } from "../api";
 import { useCart } from "../context/CartContext";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 
 const AdminBilling = () => {
   const [bills, setBills] = useState([]);
@@ -164,7 +164,7 @@ const AdminBilling = () => {
     try {
       await Promise.all(
         groupBills.map((b) =>
-          axios.patch(`${API_URL}/billing/markPaid/${b._id}`)
+         axios.patch(`${API_URL}/billing/markPaid/${b._id}`)
         )
       );
 
