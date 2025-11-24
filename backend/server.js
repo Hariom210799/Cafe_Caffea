@@ -15,29 +15,48 @@ import supplierRoutes from "./routes/supplierRoutes.js";
 import employeeRoutes from "./routes/employeeRoutes.js";
 import tableRoutes from "./routes/tableRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
-
-
 dotenv.config();
 
 const app = express();
 
-app.use(cors());
+/* -----------------------------------------------------
+   ✅ FIXED CORS — ALLOW VERCEL FRONTEND
+----------------------------------------------------- */
+app.use(
+  cors({
+    origin: [
+      "https://cafe-caffea.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    credentials: true,
+  })
+);
+
+/* -----------------------------------------------------
+   BODY PARSER & LOGGER
+----------------------------------------------------- */
 app.use(express.json());
 app.use(morgan("dev"));
 
-// Health check
+/* -----------------------------------------------------
+   HEALTH CHECK
+----------------------------------------------------- */
 app.get("/", (req, res) => {
   res.send("☕ Cafe Caffea Backend Running!");
 });
 
-// 🚀 START SERVER ONLY AFTER DB CONNECTS
+/* -----------------------------------------------------
+   START SERVER AFTER DB CONNECTS
+----------------------------------------------------- */
 const startServer = async () => {
   try {
     console.log("🔄 Connecting to MongoDB...");
@@ -55,14 +74,15 @@ const startServer = async () => {
     app.use("/api/upload", uploadRoutes);
     app.use("/api/tables", tableRoutes);
     app.use("/api/notifications", notificationRoutes);
-    app.use("/uploads", express.static(path.join(__dirname, "uploads")));
     app.use("/api/categories", categoryRoutes);
+
+    // Serve static uploads (old system)
+    app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`🔥 Server running on http://localhost:${PORT}`);
     });
-
   } catch (err) {
     console.error("❌ Failed to start server:", err.message);
   }

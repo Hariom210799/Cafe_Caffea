@@ -1,8 +1,8 @@
 import axios from "axios";
 
-const API_URL = process.env.REACT_APP_API_URL;
-
-//change done
+// ✔ Correct for VITE
+const API_URL = import.meta.env.VITE_API_URL;
+console.log("Using API URL:", API_URL);
 
 // Helper to ensure subCategory is always present
 const normalizeMenuPayload = (data) => ({
@@ -43,11 +43,11 @@ export const uploadImageAPI = (formData) =>
     ORDERS (NEW SYSTEM)
 =========================== */
 
-// Create a NEW order batch (called when user places order)
+// Create a NEW order batch
 export const createOrder = (tableName, items) =>
   axios.post(`${API_URL}/orders`, { tableName, items });
 
-// Fetch all table orders (Admin dashboard)
+// Fetch all table orders
 export const fetchAllOrders = () =>
   axios.get(`${API_URL}/orders`);
 
@@ -59,7 +59,7 @@ export const markOrderServed = (orderId) =>
 export const addItemToOrder = (orderId, item) =>
   axios.patch(`${API_URL}/orders/${orderId}/add-item`, item);
 
-// Remove an item from existing order
+// Remove item
 export const removeItemFromOrder = (orderId, itemId) =>
   axios.patch(`${API_URL}/orders/${orderId}/remove-item`, { itemId });
 
@@ -87,26 +87,20 @@ export const createBillAPI = (billData) =>
 export const fetchAllBills = () =>
   axios.get(`${API_URL}/billing/all`);
 
+export const fetchBillById = (id) =>
+  axios.get(`${API_URL}/billing/${id}`);
+
 /* ===========================
     HISTORY
 =========================== */
-
-
-// Get summary cards (revenue, orders, avg, top items)
 export const fetchHistorySummary = (params) =>
   axios.get(`${API_URL}/history/summary`, { params });
 
-
-// Get bills with filters (date range, search, payment, status)
 export const fetchHistoryBills = (params) =>
   axios.get(`${API_URL}/history/bills`, { params });
 
-// Get revenue trend (line graph)
 export const fetchHistoryTrend = () =>
   axios.get(`${API_URL}/history/trend`);
-
-export const fetchBillById = (id) =>
-  axios.get(`${API_URL}/billing/${id}`);
 
 /* ===========================
     INVENTORY
@@ -116,6 +110,7 @@ export const fetchInventory = () =>
 
 export const fetchLowStock = () =>
   axios.get(`${API_URL}/inventory/low-stock`);
+
 export const addInventoryAPI = (data) =>
   axios.post(`${API_URL}/inventory/add`, data);
 
@@ -127,9 +122,6 @@ export const fetchNotifications = () =>
 
 export const createInventoryItem = (data) =>
   axios.post(`${API_URL}/inventory/add`, data);
-
-
-
 
 export default {
   fetchCategories,
