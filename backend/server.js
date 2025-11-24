@@ -34,7 +34,7 @@ app.use(morgan("dev"));
 
 // Health check
 app.get("/", (req, res) => {
-  res.send("☕ Café Caffea Backend Running!");
+  res.send("☕ Cafe Caffea Backend Running!");
 });
 
 // 🚀 START SERVER ONLY AFTER DB CONNECTS
