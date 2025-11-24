@@ -21,80 +21,91 @@ import {
 } from "@mui/material";
 import { Add, Delete } from "@mui/icons-material";
 import SearchIcon from "@mui/icons-material/Search";
+import axios from "axios";
 import {
   markOrderServed,
   createBillAPI,
   fetchAllMenu,
   fetchCategories,
 } from "../api";
-import axios from "axios";
 
-// IMPORTANT — Use environment variable
 const API_URL = process.env.REACT_APP_API_URL;
 
 const Admin = () => {
-  const [tables, setTables] = useState([]);
+  // Orders
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Menu for "Add Dish"
   const [menuItems, setMenuItems] = useState([]);
   const [categories, setCategories] = useState(["All"]);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [search, setSearch] = useState("");
 
+  // Dialog state
   const [openDialog, setOpenDialog] = useState(false);
-  const [activeOrderInfo, setActiveOrderInfo] = useState(null);
+  const [activeOrderId, setActiveOrderId] = useState(null);
 
+  // Confirm per order
   const [confirmServeMap, setConfirmServeMap] = useState({});
 
-  // -----------------------------
-  // LOAD TABLES (instead of orders)
-  // -----------------------------
-  const loadTables = async () => {
-    try {
-      setLoading(true);
-      const res = await axios.get(`${API_URL}/tables`);
+  // ===========================
+  // LOAD ORDERS
+  // ===========================
+  const loadOrders = async () => {
+  try {
+    setLoading(true);
+    const res = await axios.get(`${API_URL}/tables`);
+    // extract only tables that have active orders
+    const activeTables = res.data.filter(t => t.activeOrders.length > 0);
+    setOrders(activeTables);
+  } catch (err) {
+    console.error("Error loading tables:", err);
+  } finally {
+    setLoading(false);
+  }
+};
 
-      // filter tables that actually have active orders
-      const tablesWithOrders = res.data.filter(
-        (t) => t.activeOrders && t.activeOrders.length > 0
-      );
 
-      setTables(tablesWithOrders);
-    } catch (err) {
-      console.error("Error loading tables:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // -----------------------------
+  // ===========================
   // LOAD MENU + CATEGORIES
-  // -----------------------------
-  const loadMenu = async () => {
+  // ===========================
+  const loadMenuAndCategories = async () => {
     try {
       const [menuRes, catRes] = await Promise.all([
         fetchAllMenu(),
         fetchCategories(),
       ]);
 
-      setMenuItems(menuRes.data || []);
+      const menuData = menuRes.data || [];
+      setMenuItems(menuData);
 
-      const names =
-        catRes.data?.map((c) => c.name).filter(Boolean) || [];
-      setCategories(["All", ...names]);
+      const catData = catRes.data || [];
+      const catNames = catData.map((c) => c.name).filter(Boolean);
+      setCategories(["All", ...catNames]);
     } catch (err) {
-      console.error("Menu Load Error", err);
+      console.error("Menu / categories load error:", err);
     }
   };
 
   useEffect(() => {
-    loadTables();
-    loadMenu();
+    loadOrders();
+    loadMenuAndCategories();
   }, []);
 
-  // -----------------------------
-  // FILTER MENU FOR "ADD DISH"
-  // -----------------------------
+  // ===========================
+  // HELPERS
+  // ===========================
+  const calcTotal = (order) => {
+    return order.batches.reduce(
+      (sum, batch) =>
+        sum + batch.items.reduce((s, i) => s + i.price * i.quantity, 0),
+      0
+    );
+  };
+
+  // Filter menu for dialog (by category + search + availability)
   const filteredMenu = useMemo(() => {
     return (menuItems || [])
       .filter((item) => item.isAvailable !== false)
@@ -114,27 +125,62 @@ const Admin = () => {
       });
   }, [menuItems, selectedCategory, search]);
 
-  // -----------------------------
-  // HANDLE REMOVE ITEM
-  // -----------------------------
+  // ===========================
+  // BILLING: MARK TABLE SERVED + CREATE BILL
+  // ===========================
+  const handleServeSingleTable = async (orderId, tableName, order) => {
+    try {
+      // 1) mark order served
+      await markOrderServed(orderId);
+
+      // 2) flatten batches -> items
+      const rawItems = order.batches.flatMap((b) => b.items || []);
+
+      const billItems = rawItems.map((it) => ({
+        name: it.name,
+        price: Number(it.price) || 0,
+        quantity: Number(it.quantity) || 0,
+      }));
+
+      const totalAmount = billItems.reduce(
+        (sum, item) => sum + item.price * item.quantity,
+        0
+      );
+
+      // 3) create bill as PENDING
+      await createBillAPI({
+        tableName,
+        items: billItems,
+        totalAmount,
+        relatedOrders: [orderId],
+        status: "PENDING",
+      });
+
+      // 4) remove table from active order list
+      setOrders((prev) => prev.filter((o) => o._id !== orderId));
+    } catch (err) {
+      console.error("Billing error:", err.response?.data || err);
+      alert("Billing failed. Check console.");
+    }
+  };
+
+  // ===========================
+  // MODIFY ORDER ITEMS
+  // ===========================
   const handleRemoveItem = async (orderId, batchId, itemId) => {
     try {
       await axios.patch(`${API_URL}/orders/${orderId}/remove-item`, {
         batchId,
         itemId,
       });
-      loadTables();
+      await loadOrders();
     } catch (err) {
-      console.error("Remove error:", err);
+      console.error("Error removing item:", err);
     }
   };
 
-  // -----------------------------
-  // ADD DISH
-  // -----------------------------
   const handleAddDish = async (orderId, item) => {
     if (!orderId || !item) return;
-
     try {
       await axios.patch(`${API_URL}/orders/${orderId}/add-item`, {
         item: {
@@ -144,51 +190,15 @@ const Admin = () => {
           quantity: 1,
         },
       });
-
-      loadTables();
+      await loadOrders();
     } catch (err) {
       console.error("Add dish error:", err);
     }
   };
 
-  // -----------------------------
-  // MARK AS SERVED + BILL
-  // -----------------------------
-  const handleServe = async (table, order) => {
-    try {
-      await markOrderServed(order._id);
-
-      const rawItems = order.batches.flatMap((b) => b.items || []);
-
-      const billItems = rawItems.map((it) => ({
-        name: it.name,
-        price: Number(it.price),
-        quantity: Number(it.quantity),
-      }));
-
-      const totalAmount = billItems.reduce(
-        (sum, it) => sum + it.price * it.quantity,
-        0
-      );
-
-      await createBillAPI({
-        tableName: table.name,
-        items: billItems,
-        totalAmount,
-        relatedOrders: [order._id],
-        status: "PENDING",
-      });
-
-      loadTables();
-    } catch (err) {
-      console.error("Billing error:", err);
-      alert("Billing failed.");
-    }
-  };
-
-  // -----------------------------
-  // RENDER UI
-  // -----------------------------
+  // ===========================
+  // RENDER
+  // ===========================
   return (
     <Box
       sx={{
@@ -205,36 +215,23 @@ const Admin = () => {
         Admin Dashboard
       </Typography>
 
-      {loading && (
-        <Typography textAlign="center" sx={{ color: "white" }}>
-          Loading...
-        </Typography>
-      )}
+      {loading && <Typography textAlign="center">Loading orders...</Typography>}
 
-      {!loading && tables.length === 0 && (
-        <Typography textAlign="center" sx={{ color: "#fff" }}>
+      {!loading && orders.length === 0 && (
+        <Typography textAlign="center" sx={{ color: "white" }}>
           No active tables.
         </Typography>
       )}
 
-      {tables.map((table) => {
-        const order = table.activeOrders[0]; // active order
-        const total = order.batches.reduce(
-          (sum, batch) =>
-            sum +
-            batch.items.reduce(
-              (s, it) => s + it.price * it.quantity,
-              0
-            ),
-          0
-        );
-
+      {orders.map((order) => {
+        const total = calcTotal(order);
         const served = order.served;
+        const hasPending = order.batches.some((b) => !b.confirmed);
         const isConfirmed = confirmServeMap[order._id] || false;
 
         return (
           <Paper
-            key={table._id}
+            key={order._id}
             sx={{
               p: 4,
               mb: 4,
@@ -243,22 +240,29 @@ const Admin = () => {
               color: "white",
             }}
           >
+            {/* Header */}
             <Box sx={{ display: "flex", justifyContent: "space-between" }}>
               <Typography
                 variant="h5"
                 sx={{ color: "#d6ad60", fontWeight: "bold" }}
               >
-                {table.name}
+                {order.tableName}
               </Typography>
 
               <Chip
                 label={
                   served
-                    ? "Served"
-                    : "Active Order"
+                    ? "Served ✅"
+                    : hasPending
+                    ? "Pending Orders 🕒"
+                    : "All Confirmed ✅"
                 }
                 sx={{
-                  backgroundColor: served ? "#2e7d32" : "#558b2f",
+                  backgroundColor: served
+                    ? "#2e7d32"
+                    : hasPending
+                    ? "#ffb300"
+                    : "#558b2f",
                   color: "white",
                 }}
               />
@@ -266,16 +270,16 @@ const Admin = () => {
 
             <Divider sx={{ my: 2, borderColor: "#d6ad60" }} />
 
-            {/* Render batches */}
-            {order.batches.map((batch, i) => (
+            {/* Batches */}
+            {order.batches.map((batch, idx) => (
               <Box key={batch._id} sx={{ mb: 2 }}>
                 <Typography
                   sx={{
                     fontWeight: "bold",
-                    color: "#8bc34a",
+                    color: batch.confirmed ? "#8bc34a" : "#ffb300",
                   }}
                 >
-                  Batch {i + 1}
+                  Batch {idx + 1} — {batch.confirmed ? "Confirmed" : "Pending"}
                 </Typography>
 
                 <Divider sx={{ my: 1, borderColor: "#d6ad60" }} />
@@ -290,26 +294,21 @@ const Admin = () => {
                     }}
                   >
                     <Typography>
-                      {it.name} × {it.quantity}
+                      {it.name} {it.subCategory && `(${it.subCategory})`} ×{" "}
+                      {it.quantity}
                     </Typography>
 
-                    <Box>
-                      <Typography
-                        sx={{ color: "#d6ad60", mr: 2 }}
-                      >
+                    <Box sx={{ display: "flex", alignItems: "center" }}>
+                      <Typography sx={{ color: "#d6ad60", mr: 2 }}>
                         ₹{(it.price * it.quantity).toFixed(2)}
                       </Typography>
 
                       {!served && (
                         <IconButton
-                          sx={{ color: "#d6ad60" }}
                           onClick={() =>
-                            handleRemoveItem(
-                              order._id,
-                              batch._id,
-                              it._id
-                            )
+                            handleRemoveItem(order._id, batch._id, it._id)
                           }
+                          sx={{ color: "#d6ad60" }}
                         >
                           <Delete />
                         </IconButton>
@@ -322,6 +321,7 @@ const Admin = () => {
 
             <Divider sx={{ my: 2, borderColor: "#d6ad60" }} />
 
+            {/* Footer */}
             <Box
               sx={{
                 display: "flex",
@@ -329,186 +329,263 @@ const Admin = () => {
                 alignItems: "center",
               }}
             >
-              <Typography sx={{ fontWeight: "bold", color: "#d6ad60" }}>
+              <Typography sx={{ color: "#d6ad60", fontWeight: "bold" }}>
                 Total: ₹{total.toFixed(2)}
               </Typography>
 
-              <input
-                type="checkbox"
-                checked={isConfirmed}
-                disabled={served}
-                onChange={(e) =>
-                  setConfirmServeMap((prev) => ({
-                    ...prev,
-                    [order._id]: e.target.checked,
-                  }))
-                }
-              />
-              <Typography>Confirm</Typography>
+              {!served && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <input
+                    type="checkbox"
+                    checked={isConfirmed}
+                    onChange={(e) =>
+                      setConfirmServeMap((prev) => ({
+                        ...prev,
+                        [order._id]: e.target.checked,
+                      }))
+                    }
+                  />
+                  <Typography sx={{ color: "white" }}>
+                    Confirm order completed
+                  </Typography>
+                </Box>
+              )}
 
               <Box sx={{ display: "flex", gap: 2 }}>
                 <Button
                   variant="contained"
+                  startIcon={<Add />}
+                  disabled={served}
                   onClick={() => {
-                    setActiveOrderInfo({ table, order });
+                    setActiveOrderId(order._id);
                     setOpenDialog(true);
                   }}
                   sx={{
                     backgroundColor: "#d6ad60",
-                    color: "#000",
+                    color: "#1b3a34",
                   }}
                 >
                   Add Dish
                 </Button>
 
-                <Button
-                  variant="outlined"
-                  disabled={!isConfirmed || served}
-                  onClick={() => handleServe(table, order)}
-                  sx={{
-                    color: "white",
-                    borderColor: "white",
-                  }}
+                <Tooltip
+                  title={
+                    !isConfirmed
+                      ? "Tick the checkbox first"
+                      : served
+                      ? "Already served"
+                      : ""
+                  }
                 >
-                  Mark Served
-                </Button>
+                  <span>
+                    <Button
+                      variant="outlined"
+                      disabled={!isConfirmed || served}
+                      onClick={() =>
+                        handleServeSingleTable(
+                          order._id,
+                          order.tableName,
+                          order
+                        )
+                      }
+                      sx={{
+                        color: "white",
+                        borderColor: "white",
+                        "&.Mui-disabled": {
+                          color: "#cccccc",
+                          borderColor: "#666666",
+                        },
+                      }}
+                    >
+                      {served ? "Served" : "Mark as Served"}
+                    </Button>
+                  </span>
+                </Tooltip>
               </Box>
             </Box>
           </Paper>
         );
       })}
 
-      {/* -----------------------------
-         ADD DISH POPUP
-      ----------------------------- */}
-      <Dialog
-        open={openDialog}
-        onClose={() => setOpenDialog(false)}
+      {/* ===========================
+          ADD DISH DIALOG (REAL MENU)
+          =========================== */}
+    {/* ===========================
+    ADD DISH DIALOG (THEMED UI)
+   =========================== */}
+<Dialog
+  open={openDialog}
+  onClose={() => setOpenDialog(false)}
+  fullWidth
+  maxWidth="md"
+  PaperProps={{
+    sx: {
+      background: "linear-gradient(180deg,#0d1f1b,#14312c)",
+      borderRadius: "22px",
+      overflow: "hidden",
+      border: "1px solid #2b4a44",
+    },
+  }}
+>
+  <DialogTitle
+    sx={{
+      color: "#d6ad60",
+      textAlign: "center",
+      fontWeight: "bold",
+      fontSize: "1.6rem",
+      pt: 3,
+      pb: 1,
+    }}
+  >
+    Select Dish to Add
+  </DialogTitle>
+
+  <DialogContent
+    dividers
+    sx={{
+      background: "transparent",
+      p: 3,
+      maxHeight: "75vh",
+    }}
+  >
+    {/* CATEGORY TABS */}
+    <Box
+      sx={{
+        display: "flex",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        mb: 2,
+        gap: 1,
+      }}
+    >
+      {categories.map((cat) => (
+        <Chip
+          key={cat}
+          label={cat}
+          onClick={() => setSelectedCategory(cat)}
+          sx={{
+            px: 2,
+            py: 0.5,
+            borderRadius: "12px",
+            fontSize: "14px",
+            border: "1px solid #d6ad60",
+            backgroundColor: selectedCategory === cat ? "#d6ad60" : "transparent",
+            color: selectedCategory === cat ? "#1b1b1b" : "#d6ad60",
+            fontWeight: selectedCategory === cat ? 600 : 400,
+            "&:hover": {
+              backgroundColor: "#d6ad60",
+              color: "#1b1b1b",
+            },
+          }}
+        />
+      ))}
+    </Box>
+
+    {/* SEARCH BAR */}
+    <Box sx={{ maxWidth: 350, mx: "auto", mb: 3 }}>
+      <TextField
         fullWidth
-        maxWidth="md"
-        PaperProps={{
+        size="small"
+        placeholder="Search dishes..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <SearchIcon sx={{ color: "#d6ad60" }} />
+            </InputAdornment>
+          ),
           sx: {
-            background: "linear-gradient(180deg,#0d1f1b,#14312c)",
-            borderRadius: "22px",
+            background: "#102b27",
+            color: "white",
+            borderRadius: "12px",
+            "& fieldset": { borderColor: "#32554f" },
           },
         }}
-      >
-        <DialogTitle
+      />
+    </Box>
+
+    {/* MENU GRID */}
+    <Grid container spacing={2}>
+      {filteredMenu.length === 0 ? (
+        <Typography
           sx={{
             textAlign: "center",
-            color: "#d6ad60",
-            fontWeight: "bold",
+            width: "100%",
+            my: 3,
+            color: "#c7d5cf",
           }}
         >
-          Add Dish
-        </DialogTitle>
-
-        <DialogContent dividers sx={{ p: 3 }}>
-          {/* Category Filter */}
-          <Box
-            sx={{
-              display: "flex",
-              flexWrap: "wrap",
-              justifyContent: "center",
-              gap: 1,
-              mb: 3,
-            }}
-          >
-            {categories.map((cat) => (
-              <Chip
-                key={cat}
-                label={cat}
-                onClick={() => setSelectedCategory(cat)}
-                sx={{
-                  border: "1px solid #d6ad60",
-                  color:
-                    selectedCategory === cat ? "#000" : "#d6ad60",
-                  backgroundColor:
-                    selectedCategory === cat
-                      ? "#d6ad60"
-                      : "transparent",
-                }}
-              />
-            ))}
-          </Box>
-
-          {/* Search */}
-          <Box sx={{ maxWidth: 350, mx: "auto", mb: 3 }}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Search dishes..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchIcon sx={{ color: "#d6ad60" }} />
-                  </InputAdornment>
-                ),
-                sx: {
-                  background: "#102b27",
-                  borderRadius: "12px",
-                  color: "#fff",
+          No dishes found.
+        </Typography>
+      ) : (
+        filteredMenu.map((item) => (
+          <Grid item xs={12} sm={6} md={4} key={item._id}>
+            <Card
+              sx={{
+                background: "#14312c",
+                borderRadius: "18px",
+                overflow: "hidden",
+                color: "white",
+                boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+                border: "1px solid #244842",
+                transition: "0.2s",
+                "&:hover": {
+                  transform: "scale(1.03)",
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.55)",
                 },
               }}
-            />
-          </Box>
+            >
+              <CardMedia
+                component="img"
+                image={item.image}
+                alt={item.name}
+                sx={{ height: 150, objectFit: "cover" }}
+              />
 
-          {/* Menu Grid */}
-          <Grid container spacing={2}>
-            {filteredMenu.map((item) => (
-              <Grid item xs={12} sm={6} md={4} key={item._id}>
-                <Card
+              <CardContent sx={{ textAlign: "center", pb: "20px" }}>
+                <Typography sx={{ fontSize: "1rem", fontWeight: 600 }}>
+                  {item.name}
+                  {item.subCategory && ` (${item.subCategory})`}
+                </Typography>
+
+                <Typography
                   sx={{
-                    background: "#14312c",
-                    borderRadius: "18px",
-                    overflow: "hidden",
-                    border: "1px solid #244842",
+                    color: "#d6ad60",
+                    fontWeight: 600,
+                    mt: 0.5,
+                    mb: 1.5,
                   }}
                 >
-                  <CardMedia
-                    component="img"
-                    image={item.image}
-                    alt={item.name}
-                    sx={{ height: 150 }}
-                  />
+                  ${Number(item.price).toFixed(2)}
+                </Typography>
 
-                  <CardContent sx={{ textAlign: "center" }}>
-                    <Typography>
-                      {item.name}{" "}
-                      {item.subCategory && `(${item.subCategory})`}
-                    </Typography>
-
-                    <Typography
-                      sx={{ color: "#d6ad60", fontWeight: "bold" }}
-                    >
-                      ₹{Number(item.price).toFixed(2)}
-                    </Typography>
-
-                    <Button
-                      variant="contained"
-                      sx={{
-                        mt: 1,
-                        backgroundColor: "#d6ad60",
-                        color: "#000",
-                      }}
-                      onClick={() =>
-                        handleAddDish(
-                          activeOrderInfo.order._id,
-                          item
-                        )
-                      }
-                    >
-                      Add
-                    </Button>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
+                <Button
+                  variant="contained"
+                  sx={{
+                    backgroundColor: "#d6ad60",
+                    color: "#1b1b1b",
+                    fontWeight: "bold",
+                    borderRadius: "10px",
+                    px: 4,
+                    py: 0.7,
+                    "&:hover": {
+                      backgroundColor: "#e8d5b7",
+                    },
+                  }}
+                  onClick={() => handleAddDish(activeOrderId, item)}
+                >
+                  Add
+                </Button>
+              </CardContent>
+            </Card>
           </Grid>
-        </DialogContent>
-      </Dialog>
+        ))
+      )}
+    </Grid>
+  </DialogContent>
+</Dialog>
+
     </Box>
   );
 };
