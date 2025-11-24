@@ -99,7 +99,7 @@ const handleImageUpload = async (e) => {
     const formData = new FormData();
     formData.append("image", file);
 
-    // Call your backend API
+    // Upload to backend → backend uploads to Cloudinary
     const res = await uploadImageAPI(formData);
 
     if (!res.data.success) {
@@ -108,17 +108,15 @@ const handleImageUpload = async (e) => {
       return;
     }
 
-    // Backend returns:  /uploads/xxxx.png
-    const relativeUrl = res.data.url;
+    // Cloudinary HTTPS URL
+    const cloudImageUrl = res.data.url;
 
-    // Convert to full URL for frontend preview
-    const fullUrl = `http://localhost:5000${relativeUrl}`;
+    // Save final URL in form
+    setForm((prev) => ({ ...prev, image: cloudImageUrl }));
 
-    // Save to form
-    setForm((prev) => ({ ...prev, image: fullUrl }));
+    // Preview will also show cloudinary version
+    setPreview(cloudImageUrl);
 
-    // Set preview
-    setPreview(fullUrl);
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
     alert("Image upload failed.");
