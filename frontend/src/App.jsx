@@ -11,6 +11,7 @@ import Admin from "./pages/Admin";
 import AdminLogin from "./pages/AdminLogin";
 import AdminHome from "./pages/AdminHome";
 import AdminInventory  from "./pages/AdminInventory";
+import OrderSuccess from "./pages/OrderSuccess";
 import AdminBilling from "./pages/AdminBilling";
 import AdminHistory from "./pages/AdminHistory";
 import AdminCategories from "./pages/AdminCategories";
@@ -41,7 +42,7 @@ export default function App() {
               <Route path="/admin/inventory" element={<AdminInventory  />} />
               <Route path="/admin/edit-menu" element={<AdminEditMenu />} />
               <Route path="/admin/categories" element={<AdminCategories />} />
-              
+              <Route path="/order-success" element={<OrderSuccess />} />
               <Route path="/admin" element={<Admin />} />
             </Routes>
           </React.Suspense>

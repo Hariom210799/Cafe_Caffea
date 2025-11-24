@@ -56,32 +56,33 @@ const ConfirmOrder = () => {
 
   // ================= CONFIRM HANDLER =================
   const handleConfirm = async () => {
-    try {
-      if (activeBatch && Object.keys(activeBatch.items).length > 0) {
-        const itemsArray = Object.values(activeBatch.items).map((i) => ({
-          name: i.name,
-          price: i.price,
-          quantity: i.quantity,
-          subCategory: i.subCategory || null,
-          menuItem: i._id,
-        }));
+  try {
+    if (activeBatch && Object.keys(activeBatch.items).length > 0) {
+      const itemsArray = Object.values(activeBatch.items).map((i) => ({
+        name: i.name,
+        price: i.price,
+        quantity: i.quantity,
+        subCategory: i.subCategory || null,
+        menuItem: i._id,
+      }));
 
-        console.log("📤 Sending to backend:", itemsArray);
+      console.log("📤 Sending to backend:", itemsArray);
 
-        // send to backend
-        await createOrder(selectedTable, itemsArray);
-      }
-
-      // update local cart state (marks batch as confirmed in context)
-      confirmLocalOrder(selectedTable);
-
-      // 🔥 HARD REFRESH: everything in MenuPage resets
-      window.location.href = "/menu"; // full reload, not SPA navigate
-    } catch (err) {
-      console.error("❌ Error confirming order:", err);
-      alert("Something went wrong while placing your order. Please try again.");
+      // send to backend
+      await createOrder(selectedTable, itemsArray);
     }
-  };
+
+    // update local cart state (marks batch as confirmed in context)
+    confirmLocalOrder(selectedTable);
+
+    // 🔥 Redirect to SUCCESS page (10 sec → auto go to menu)
+    window.location.href = "/order-success";
+  } catch (err) {
+    console.error("❌ Error confirming order:", err);
+    alert("Something went wrong while placing your order. Please try again.");
+  }
+};
+
 
   return (
     <Box
