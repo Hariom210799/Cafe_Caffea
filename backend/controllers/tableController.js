@@ -11,7 +11,7 @@ export const getTables = async (req, res) => {
     for (let table of tables) {
       table.activeOrders = await Order.find({
         tableName: table.name,
-        status: "CONFIRMED",
+        served: false,
       }).lean();
 
       table.lastBill = await Bill.findOne({ tableName: table.name })
